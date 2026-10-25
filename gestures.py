@@ -15,7 +15,6 @@ SMOOTH = 0.40
 HISTORY = 4
 LANE_DEADZONE = 0.12
 RETURN_ZONE = 0.05
-EXTEND_MARGIN = 0.02
 
 
 def dist(p1, p2):
@@ -38,8 +37,22 @@ def is_folded(lms, tip, pip, mcp, wrist=0):
     return (lms[tip].y > lms[pip].y - 0.01) or (dist(lms[tip], lms[wrist]) < dist(lms[pip], lms[wrist]) * 1.15)
 
 
+def is_two_fingers(landmarks):
+    wrist = landmarks[WRIST]
+    idx_up = landmarks[INDEX_TIP].y < landmarks[INDEX_MCP].y and dist(landmarks[INDEX_TIP], wrist) > dist(landmarks[INDEX_PIP], wrist)
+    mid_up = landmarks[MIDDLE_TIP].y < landmarks[MIDDLE_MCP].y and dist(landmarks[MIDDLE_TIP], wrist) > dist(landmarks[MIDDLE_PIP], wrist)
+    if not (idx_up and mid_up):
+        return False
+
+    rng_folded = (landmarks[RING_TIP].y > landmarks[INDEX_PIP].y) or (dist(landmarks[RING_TIP], wrist) < dist(landmarks[RING_PIP], wrist) * 1.15)
+    pnk_folded = (landmarks[PINKY_TIP].y > landmarks[INDEX_PIP].y) or (dist(landmarks[PINKY_TIP], wrist) < dist(landmarks[PINKY_PIP], wrist) * 1.15)
+    rng_not_up = landmarks[RING_TIP].y > landmarks[INDEX_TIP].y + 0.04
+    pnk_not_up = landmarks[PINKY_TIP].y > landmarks[INDEX_TIP].y + 0.04
+
+    return rng_folded and pnk_folded and rng_not_up and pnk_not_up
+
+
 def get_hand_tilt_deg(landmarks):
-    # Wrist to middle knuckle angle relative to vertical
     wrist = landmarks[WRIST]
     mcp = landmarks[MIDDLE_MCP]
     dx = mcp.x - wrist.x
@@ -104,56 +117,8 @@ class GestureTracker:
 
         self.raw_hist.append((raw_x, raw_y))
 
-        # 1. Hand tilt steering
-        tilt = get_hand_tilt_deg(landmarks)
-        self.current_tilt_deg = tilt
-        if self.tilt_armed:
-            if tilt < -TILT_THRESH_DEG:
-                self.tilt_armed = False
-                self.current_pose = "TILT_LEFT"
-                return "LEFT", (self.sx, self.sy)
-            elif tilt > TILT_THRESH_DEG:
-                self.tilt_armed = False
-                self.current_pose = "TILT_RIGHT"
-                return "RIGHT", (self.sx, self.sy)
-        elif abs(tilt) < TILT_RESET_DEG:
-            self.tilt_armed = True
-
-        # 2. Pointing left or right
-        if is_pointing_horiz(landmarks, "left"):
-            pose = "POINT_LEFT"
-            if self.prev_pose != pose:
-                self.prev_pose = pose
-                self.current_pose = pose
-                return "LEFT", (self.sx, self.sy)
-        elif is_pointing_horiz(landmarks, "right"):
-            pose = "POINT_RIGHT"
-            if self.prev_pose != pose:
-                self.prev_pose = pose
-                self.current_pose = pose
-                return "RIGHT", (self.sx, self.sy)
-
-        # 3. Thumb left or right (hitchhiker sign)
-        elif is_thumb_pointing(landmarks, "left"):
-            pose = "THUMB_LEFT"
-            if self.prev_pose != pose:
-                self.prev_pose = pose
-                self.current_pose = pose
-                return "LEFT", (self.sx, self.sy)
-        elif is_thumb_pointing(landmarks, "right"):
-            pose = "THUMB_RIGHT"
-            if self.prev_pose != pose:
-                self.prev_pose = pose
-                self.current_pose = pose
-                return "RIGHT", (self.sx, self.sy)
-
-        # 4. Standard poses: hoverboard, jump, slide
-        elif (
-            is_extended_up(landmarks, INDEX_TIP, INDEX_PIP, INDEX_MCP)
-            and is_extended_up(landmarks, MIDDLE_TIP, MIDDLE_PIP, MIDDLE_MCP)
-            and not is_extended_up(landmarks, RING_TIP, RING_PIP, RING_MCP)
-            and not is_extended_up(landmarks, PINKY_TIP, PINKY_PIP, PINKY_MCP)
-        ):
+        # 1. Distinct hand poses (checked first so poses override slight hand tilt)
+        if is_two_fingers(landmarks):
             pose = "HOVER"
             if self.prev_pose != pose:
                 self.prev_pose = pose
@@ -183,11 +148,55 @@ class GestureTracker:
                 self.prev_pose = pose
                 self.current_pose = pose
                 return "SLIDE", (self.sx, self.sy)
+
+        elif is_pointing_horiz(landmarks, "left"):
+            pose = "POINT_LEFT"
+            if self.prev_pose != pose:
+                self.prev_pose = pose
+                self.current_pose = pose
+                return "LEFT", (self.sx, self.sy)
+
+        elif is_pointing_horiz(landmarks, "right"):
+            pose = "POINT_RIGHT"
+            if self.prev_pose != pose:
+                self.prev_pose = pose
+                self.current_pose = pose
+                return "RIGHT", (self.sx, self.sy)
+
+        elif is_thumb_pointing(landmarks, "left"):
+            pose = "THUMB_LEFT"
+            if self.prev_pose != pose:
+                self.prev_pose = pose
+                self.current_pose = pose
+                return "LEFT", (self.sx, self.sy)
+
+        elif is_thumb_pointing(landmarks, "right"):
+            pose = "THUMB_RIGHT"
+            if self.prev_pose != pose:
+                self.prev_pose = pose
+                self.current_pose = pose
+                return "RIGHT", (self.sx, self.sy)
+
         else:
             self.prev_pose = None
             self.current_pose = None
 
-        # 5. Fast swipe flicks
+        # 2. Hand tilt steering (active when no distinct pose is held)
+        tilt = get_hand_tilt_deg(landmarks)
+        self.current_tilt_deg = tilt
+        if self.tilt_armed:
+            if tilt < -TILT_THRESH_DEG:
+                self.tilt_armed = False
+                self.current_pose = "TILT_LEFT"
+                return "LEFT", (self.sx, self.sy)
+            elif tilt > TILT_THRESH_DEG:
+                self.tilt_armed = False
+                self.current_pose = "TILT_RIGHT"
+                return "RIGHT", (self.sx, self.sy)
+        elif abs(tilt) < TILT_RESET_DEG:
+            self.tilt_armed = True
+
+        # 3. Fast swipe flicks
         if len(self.raw_hist) >= 3:
             dx = self.raw_hist[-1][0] - self.raw_hist[0][0]
             dy = self.raw_hist[-1][1] - self.raw_hist[0][1]
@@ -204,7 +213,7 @@ class GestureTracker:
                     elif dy > SWIPE_THRESH:
                         return "SLIDE", (self.sx, self.sy)
 
-        # 6. Hand lane position shift
+        # 4. Hand lane position shift
         ox = self.origin[0]
         dx = self.sx - ox
         if self.lane_armed:
@@ -249,4 +258,4 @@ if __name__ == "__main__":
     assert t.update(hand(index=True, middle=True))[0] == "HOVER"
     t = GestureTracker()
     assert t.update(hand())[0] == "SLIDE"
-    print("gestures ok")
+    print("all base gestures ok")

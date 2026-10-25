@@ -49,7 +49,7 @@ GESTURE_DESCRIPTIONS = {
     "RIGHT": "RIGHT [-->]",
     "JUMP": "JUMP  [^ UP]",
     "SLIDE": "SLIDE [v DOWN]",
-    "HOVER": "HOVERBOARD [SPACE]",
+    "HOVER": "HOVERBOARD [ACTIVE]",
 }
 
 

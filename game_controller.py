@@ -16,7 +16,7 @@ COOLDOWN_S = {
     "RIGHT": 0.15,
     "JUMP": 0.35,
     "SLIDE": 0.35,
-    "HOVER": 0.70,
+    "HOVER": 0.60,
 }
 
 user32 = ctypes.windll.user32
@@ -74,7 +74,6 @@ KEYEVENTF_EXTENDEDKEY = 0x0001
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_SCANCODE = 0x0008
 
-# Send both Arrow keys and WASD to cover Google Play Games, emulators, and web versions
 KEY_MAPPINGS = {
     "LEFT": [
         (0x25, 0x4B, True),   # Left Arrow
@@ -179,13 +178,41 @@ def _send_single_key(vk, scan, down=True, extended=False):
 
 
 def tap_keys_async(key_list, hold_sec=0.045):
-    # Hold key for duration in a thread so game engine samples it reliably
     def worker():
         for vk, scan, ext in key_list:
             _send_single_key(vk, scan, down=True, extended=ext)
         time.sleep(hold_sec)
         for vk, scan, ext in key_list:
             _send_single_key(vk, scan, down=False, extended=ext)
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def deploy_hoverboard(hwnd=None):
+    def worker():
+        # Spacebar double-tap
+        _send_single_key(0x20, 0x39, down=True, extended=False)
+        time.sleep(0.04)
+        _send_single_key(0x20, 0x39, down=False, extended=False)
+        time.sleep(0.05)
+        _send_single_key(0x20, 0x39, down=True, extended=False)
+        time.sleep(0.04)
+        _send_single_key(0x20, 0x39, down=False, extended=False)
+
+        # In-window screen double-click
+        if hwnd:
+            rect = wintypes.RECT()
+            user32.GetClientRect(hwnd, ctypes.byref(rect))
+            cx = (rect.right - rect.left) // 2
+            cy = (rect.bottom - rect.top) // 2
+            lparam = (cy << 16) | (cx & 0xFFFF)
+            WM_LBUTTONDOWN = 0x0201
+            WM_LBUTTONUP = 0x0202
+            user32.PostMessageW(hwnd, WM_LBUTTONDOWN, 1, lparam)
+            user32.PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam)
+            time.sleep(0.04)
+            user32.PostMessageW(hwnd, WM_LBUTTONDOWN, 1, lparam)
+            user32.PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam)
 
     threading.Thread(target=worker, daemon=True).start()
 
@@ -214,6 +241,10 @@ class GameController:
         if self.hwnd:
             focus_game(self.hwnd)
 
-        tap_keys_async(KEY_MAPPINGS[gesture], hold_sec=0.045)
+        if gesture == "HOVER":
+            deploy_hoverboard(self.hwnd)
+        else:
+            tap_keys_async(KEY_MAPPINGS[gesture], hold_sec=0.045)
+
         self._last[gesture] = time.monotonic()
         return True

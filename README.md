@@ -21,7 +21,7 @@ Multiple gestures are supported for lane switching:
 |---|---|---|---|
 | **Jump** | 1 Finger up (index extended) | Flick hand up | Up Arrow + `W` |
 | **Slide / Roll** | Fist (all fingers folded) | Flick hand down | Down Arrow + `S` |
-| **Hoverboard** | Two fingers up (peace sign) | — | Space |
+| **Hoverboard** | Two fingers up (peace sign) | — | Space (2x) + Mouse Double-Tap |
 | **Neutral** | Open hand upright | Centered | None |
 
 ## Installation & Setup
